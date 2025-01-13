@@ -52,18 +52,19 @@ async function run() {
     // Endpoint to handle contact form submission and send email using Nodemailer
     app.post('/message', async (req, res) => {
       const { name, email, message } = req.body;
-
+      console.log(`Received message from ${name} (${email}): ${message}`);
+    
       // Save the message to the MongoDB database
       const result = await messageCollection.insertOne({ name, email, message });
-
+    
       // Send email notification
       const mailOptions = {
-        from: email, // Sender's email (from the form input)
-        to: process.env.EMAIL_USER, // Your email (the recipient)
-        subject: `New message from ${name}`, // Subject of the email
-        text: `You have received a new message from ${name} (${email}):\n\n${message}`, // Email body
+        from: email,
+        to: process.env.EMAIL_USER,
+        subject: `Client from Portfolio ${name}`,
+        text: `New message from client ${name} (${email}):\n\n${message}`,
       };
-
+    
       try {
         // Send the email using Nodemailer
         await transporter.sendMail(mailOptions);
@@ -73,6 +74,7 @@ async function run() {
         res.status(500).send({ message: 'Error sending email. Please try again later.' });
       }
     });
+    
 
     // Endpoint to get all messages from the database
     app.get('/message', async (req, res) => {
