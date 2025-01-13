@@ -18,7 +18,9 @@ const client = new MongoClient(uri, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
+  useNewUrlParser: true,
+  useUnifiedTopology: true, // Ensures reliable connections
 });
 
 // Create a Nodemailer transporter
@@ -28,75 +30,98 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  socketTimeout: 30000, // 30 seconds timeout
+  connectionTimeout: 30000, // 30 seconds connection timeout
 });
 
-async function run() {
+async function connectToDatabase() {
   try {
-    await client.connect();
-    const photoCollection = client.db('fuadrahat').collection('photos');
-    const messageCollection = client.db('fuadrahat').collection('message');
-
-    // Endpoint to save photo data to MongoDB
-    app.post('/photos', async (req, res) => {
-      const photo = req.body;
-      try {
-        const result = await photoCollection.insertOne(photo);
-        res.send(result);
-      } catch (error) {
-        console.error('Error saving photo:', error);
-        res.status(500).send({ message: 'Error saving photo' });
-      }
-    });
-
-    // Endpoint to get all photo data from MongoDB
-    app.get('/photos', async (req, res) => {
-      try {
-        const result = await photoCollection.find().toArray();
-        res.send(result);
-      } catch (error) {
-        console.error('Error fetching photos:', error);
-        res.status(500).send({ message: 'Error fetching data' });
-      }
-    });
-
-    // Endpoint to handle contact form submission and send email using Nodemailer
-    app.post('/message', async (req, res) => {
-      const { name, email, message } = req.body;
-      try {
-        // Save the message to the MongoDB database
-        const result = await messageCollection.insertOne({ name, email, message });
-
-        // Send email notification
-        const mailOptions = {
-          from: email,
-          to: process.env.EMAIL_USER,
-          subject: `Client from Portfolio ${name}`,
-          text: `New message from client ${name} (${email}):\n\n${message}`,
-        };
-
-        await transporter.sendMail(mailOptions);
-        res.send({ message: 'Message sent successfully and saved to the database!' });
-      } catch (error) {
-        console.error('Error in /message endpoint:', error);
-        res.status(500).send({ message: 'Error processing your message. Please try again later.' });
-      }
-    });
-
-    // Test MongoDB connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Successfully connected to MongoDB!");
+    if (!client.isConnected()) {
+      await client.connect();
+      console.log("Successfully connected to MongoDB!");
+    }
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error("MongoDB connection error:", error);
+    setTimeout(connectToDatabase, 5000); // Retry connection after 5 seconds
   }
 }
 
-run().catch(console.dir);
+connectToDatabase();
+
+// MongoDB collections
+const photoCollection = client.db('fuadrahat').collection('photos');
+const messageCollection = client.db('fuadrahat').collection('message');
+
+// Endpoint to save photo data to MongoDB
+app.post('/photos', async (req, res) => {
+  const photo = req.body;
+  try {
+    const result = await photoCollection.insertOne(photo);
+    res.send(result);
+  } catch (error) {
+    console.error('Error saving photo:', error);
+    res.status(500).send({ message: 'Error saving photo' });
+  }
+});
+
+// Endpoint to get all photo data from MongoDB
+app.get('/photos', async (req, res) => {
+  try {
+    const result = await photoCollection.find().toArray();
+    res.send(result);
+  } catch (error) {
+    console.error('Error fetching photos:', error);
+    res.status(500).send({ message: 'Error fetching data' });
+  }
+});
+
+// Endpoint to handle contact form submission and send email using Nodemailer
+app.post('/message', async (req, res) => {
+  const { name, email, message } = req.body;
+  try {
+    // Save the message to the MongoDB database
+    const result = await messageCollection.insertOne({ name, email, message });
+
+    // Send email notification
+    const mailOptions = {
+      from: email,
+      to: process.env.EMAIL_USER,
+      subject: `Client from Portfolio ${name}`,
+      text: `New message from client ${name} (${email}):\n\n${message}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.send({ message: 'Message sent successfully and saved to the database!' });
+  } catch (error) {
+    console.error('Error in /message endpoint:', error);
+    res.status(500).send({ message: 'Error processing your message. Please try again later.' });
+  }
+});
+
+// Test MongoDB connection
+async function testMongoDBConnection() {
+  try {
+    await client.db("admin").command({ ping: 1 });
+    console.log("Successfully connected to MongoDB!");
+  } catch (error) {
+    console.error("MongoDB connection error:", error);
+  }
+}
+testMongoDBConnection();
 
 // Default route
 app.get('/', (req, res) => {
   res.send('Fuad Rahat Portfolio is running...');
 });
 
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Graceful shutdown initiated...');
+  await client.close(); // Close MongoDB connection
+  process.exit(0); // Exit cleanly
+});
+
+// Start the server
 app.listen(port, () => {
   console.log(`The Fuad Rahat portfolio site is running on port ${port}`);
 });
